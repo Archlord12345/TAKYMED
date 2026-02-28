@@ -12,7 +12,7 @@ export interface DemoResponse {
 }
 
 export interface MedicationEntry {
-  id: string;
+  id: number;
   name: string;
   morning: boolean;
   midday: boolean;
@@ -24,7 +24,8 @@ export interface MedicationEntry {
 }
 
 export interface DoseSchedule {
-  medicationId: string;
+  id: number;
+  medicationId: number;
   medicationName: string;
   dose: number;
   unit: string;
@@ -33,4 +34,22 @@ export interface DoseSchedule {
   type: 'matin' | 'midi' | 'soir';
   statusReminderSent: boolean;
   statusTaken: boolean;
+}
+
+export type AccountType = "standard" | "professional" | "pharmacist";
+
+export interface UserDTO {
+  id: number;
+  email: string | null;
+  phone: string | null;
+  type: AccountType;
+  name: string;
+}
+
+export interface DashboardStats {
+  observanceRate: number;
+  activeReminders: number;
+  plannedReminders: number;
+  nearbyPharmacies: number;
+  nextDose: DoseSchedule | null;
 }

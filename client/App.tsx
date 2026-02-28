@@ -15,6 +15,7 @@ import Prescription from "./pages/Prescription";
 import Dashboard from "./pages/Dashboard";
 import SearchMedications from "./pages/SearchMedications";
 import PharmacyManagement from "./pages/PharmacyManagement";
+import InteractionsManagement from "./pages/InteractionsManagement";
 import Ads from "./pages/Ads";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/search" element={<ProtectedRoute><SearchMedications /></ProtectedRoute>} />
               <Route path="/pharmacy-mgmt" element={<ProtectedRoute><PharmacyManagement /></ProtectedRoute>} />
+              <Route path="/interactions-mgmt" element={<ProtectedRoute><InteractionsManagement /></ProtectedRoute>} />
               <Route path="/ads" element={<ProtectedRoute><Ads /></ProtectedRoute>} />
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

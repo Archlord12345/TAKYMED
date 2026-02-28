@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,36 +25,58 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { MedicationEntry, DoseSchedule } from "@shared/api";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 
 
 export default function Prescription() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [patient, setPatient] = useState({
-    title: "Mon Ordonnance",
-    name: "Jean Dupont",
-    age: 45,
-    weight: 75
+    title: "",
+    name: user?.name || "",
+    age: 0,
+    weight: 0
   });
 
   const [medications, setMedications] = useState<MedicationEntry[]>([
     {
       id: "1",
-      name: "Doliprane 1000",
-      morning: true,
-      midday: true,
-      evening: true,
-      intervalHours: 6,
-      durationDays: 3,
+      name: "",
+      morning: false,
+      midday: false,
+      evening: false,
+      intervalHours: 8,
+      durationDays: 1,
       doseValue: 1,
       unit: "comprimé"
     }
   ]);
 
   const [notifConfig, setNotifConfig] = useState({
-    phone: "+237 600000000",
+    phone: user?.phone || "",
     type: "whatsapp" as "sms" | "whatsapp" | "call" | "push"
   });
+
+  const [dbMedications, setDbMedications] = useState<{ id: number, name: string }[]>([]);
+
+  useEffect(() => {
+    async function fetchMeds() {
+      try {
+        const res = await fetch('/api/medications');
+        if (res.ok) {
+          const data = await res.json();
+          setDbMedications(data.medications);
+        }
+      } catch (err) {
+        console.error("Erreur lors du chargement des médicaments:", err);
+      }
+    }
+    fetchMeds();
+  }, []);
 
   const addMedication = () => {
     setMedications([
@@ -207,12 +229,17 @@ export default function Prescription() {
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
                         {idx + 1}
                       </div>
-                      <Input
-                        placeholder="Médicament (ex: Doliprane)"
+                      <select
+                        title="Sélectionner un médicament"
                         value={m.name}
                         onChange={(e) => updateMedication(m.id, { name: e.target.value })}
-                        className="border-none bg-slate-50 text-base md:text-lg font-bold rounded-xl h-12 w-full max-w-[300px] focus-visible:ring-primary"
-                      />
+                        className="bg-slate-50 text-base md:text-lg font-bold rounded-xl h-12 w-full max-w-[300px] border-none focus-visible:ring-primary px-4 outline-none appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
+                      >
+                        <option value="" disabled hidden>Sélectionner un médicament...</option>
+                        {dbMedications.map(dbM => (
+                          <option key={dbM.id} value={dbM.name}>{dbM.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => removeMedication(m.id)} className="text-muted-foreground hover:text-destructive">
                       <Trash2 className="w-5 h-5" />
@@ -484,19 +511,84 @@ export default function Prescription() {
             </div>
 
             <div className="flex justify-between items-center">
-              <Button variant="ghost" onClick={() => setStep(2)} className="rounded-2xl h-14 px-8">
-                Retour
-              </Button>
-              <Button
-                size="lg"
-                className="rounded-2xl h-14 px-12 text-lg font-bold shadow-xl shadow-primary/20 bg-green-600 hover:bg-green-700"
-                onClick={() => {
-                  toast.success("Ordonnance validée et rappels programmés !");
-                }}
-              >
-                Valider l'Ordonnance
-                <Send className="ml-2 w-5 h-5" />
-              </Button>
+              <span className="text-sm text-muted-foreground italic">
+                {notifConfig.phone ? `Destinataire: ${notifConfig.phone}` : "Veuillez entrer un numéro"}
+              </span>
+              <div className="flex gap-4">
+                <Button variant="ghost" onClick={() => setStep(2)} className="rounded-2xl h-14 px-8">
+                  Retour
+                </Button>
+                <Button
+                  size="lg"
+                  disabled={isSubmitting || !notifConfig.phone}
+                  className="rounded-2xl h-14 px-12 text-lg font-bold shadow-xl shadow-primary/20 bg-green-600 hover:bg-green-700 disabled:opacity-50 min-w-[200px]"
+                  onClick={async () => {
+                    if (!user) {
+                      toast.error("Vous devez être connecté");
+                      return;
+                    }
+
+                    setIsSubmitting(true);
+                    try {
+                      // 1. Save to DB
+                      const res = await fetch("/api/prescriptions", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          userId: user.id,
+                          title: patient.title,
+                          weight: patient.weight,
+                          age: patient.age,
+                          medications: medications.map(m => ({
+                            ...m,
+                            name: m.name // Ensure we send the name
+                          })),
+                          notifConfig
+                        })
+                      });
+
+                      if (!res.ok) throw new Error("Erreur de sauvegarde");
+
+                      // 2. Simulation Step (What the user specifically requested)
+                      const notifMethod = notifConfig.type === 'sms' ? 'SMS'
+                        : notifConfig.type === 'call' ? 'Appel vocal'
+                          : notifConfig.type === 'push' ? 'Notification Push'
+                            : 'WhatsApp';
+
+                      toast.info(`Initialisation de l'envoi des rappels...`, { duration: 2000 });
+
+                      // Sequential simulation
+                      await new Promise(r => setTimeout(r, 1500));
+                      toast.loading(`Envoi du message de confirmation via ${notifMethod} au ${notifConfig.phone}...`, { id: "simul-notif" });
+
+                      await new Promise(r => setTimeout(r, 2000));
+                      toast.success(`Succès : Programme de rappel activé pour ${medications.length} médicament(s).`, { id: "simul-notif" });
+
+                      await new Promise(r => setTimeout(r, 1000));
+                      toast.success("Ordonnance enregistrée avec succès !");
+
+                      setTimeout(() => navigate("/dashboard"), 1000);
+
+                    } catch (error) {
+                      console.error(error);
+                      toast.error("Échec de l'enregistrement de l'ordonnance");
+                      setIsSubmitting(false);
+                    }
+                  }}
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Traitement...
+                    </div>
+                  ) : (
+                    <>
+                      Valider & Envoyer
+                      <Send className="ml-2 w-5 h-5" />
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -42,6 +42,34 @@ export function initializeDatabase() {
             console.log("Database initialized successfully.");
         } else {
             console.log("Database tables already exist. Skipping initialization.");
+
+            // Check for missing columns in Medicaments (Migration)
+            const medicamentColumns = db.prepare("PRAGMA table_info(Medicaments)").all() as { name: string }[];
+            const hasDateAjout = medicamentColumns.some(c => c.name === 'date_ajout');
+            const hasPrix = medicamentColumns.some(c => c.name === 'prix');
+
+            if (!hasDateAjout) {
+                console.log("Adding date_ajout column to Medicaments...");
+                db.exec("ALTER TABLE Medicaments ADD COLUMN date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP");
+            }
+            if (!hasPrix) {
+                console.log("Adding prix column to Medicaments...");
+                db.exec("ALTER TABLE Medicaments ADD COLUMN prix VARCHAR(50)");
+            }
+
+            // Check for missing columns in Pharmacies (Migration)
+            const pharmacyColumns = db.prepare("PRAGMA table_info(Pharmacies)").all() as { name: string }[];
+            const hasLat = pharmacyColumns.some(c => c.name === 'latitude');
+            const hasLng = pharmacyColumns.some(c => c.name === 'longitude');
+
+            if (!hasLat) {
+                console.log("Adding latitude column to Pharmacies...");
+                db.exec("ALTER TABLE Pharmacies ADD COLUMN latitude REAL");
+            }
+            if (!hasLng) {
+                console.log("Adding longitude column to Pharmacies...");
+                db.exec("ALTER TABLE Pharmacies ADD COLUMN longitude REAL");
+            }
         }
     } catch (error) {
         console.error("Failed to initialize database:", error);

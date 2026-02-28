@@ -95,10 +95,6 @@ CREATE TABLE Medicaments (
     photo_url VARCHAR(255),
     
     mode_administration TEXT CHECK(mode_administration IN ('orale','buvable','injectable','cutanee','inhalation','sublinguale','oculaire','nasale')) DEFAULT 'orale',
-        'orale','buvable','injectable',
-        'cutanee','inhalation',
-        'sublinguale','oculaire','nasale'
-    ) DEFAULT 'orale',
 
     moment_repas TEXT CHECK(moment_repas IN ('avant_repas','pendant_repas','apres_repas','a_jeun','indifferent')) DEFAULT 'indifferent',
 

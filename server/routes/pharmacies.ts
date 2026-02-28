@@ -1,0 +1,169 @@
+import { Router } from "express";
+import { db } from "../db";
+
+const router = Router();
+
+// Get pharmacies owned by a specific pharmacist
+router.get("/", (req, res) => {
+    const pharmacistId = req.query.pharmacistId;
+    if (!pharmacistId) return res.status(400).json({ error: "Missing pharmacistId" });
+
+    try {
+        const pharmacies = db.prepare(`
+            SELECT id_pharmacie as id, nom_pharmacie as name, adresse as address, telephone as phone
+            FROM Pharmacies
+            WHERE id_pharmacien = ?
+        `).all(pharmacistId);
+        res.json({ pharmacies });
+    } catch (error) {
+        console.error("Failed to fetch pharmacies:", error);
+        res.status(500).json({ error: "Server error fetching pharmacies" });
+    }
+});
+
+// Create a new pharmacy (Pharmacist only)
+router.post("/", (req, res) => {
+    const { name, address, phone, openTime, closeTime, pharmacistId, initialMeds, latitude, longitude } = req.body;
+    if (!name || !pharmacistId) {
+        return res.status(400).json({ error: "Name and Pharmacist ID are required" });
+    }
+
+    try {
+        const transaction = db.transaction(() => {
+            const info = db.prepare(`
+                INSERT INTO Pharmacies (nom_pharmacie, adresse, telephone, heure_ouverture, heure_fermeture, id_pharmacien, latitude, longitude)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(name, address || "", phone || "", openTime || "08:00", closeTime || "20:00", pharmacistId, latitude || null, longitude || null);
+
+            const pharmacyId = info.lastInsertRowid;
+
+            if (initialMeds && Array.isArray(initialMeds)) {
+                const insertStock = db.prepare("INSERT INTO StockMedicamentsPharmacie (id_pharmacie, id_medicament, quantite) VALUES (?, ?, ?)");
+                for (const med of initialMeds) {
+                    insertStock.run(pharmacyId, med.id, med.quantity);
+                }
+            }
+
+            return pharmacyId;
+        });
+
+        const pharmacyId = transaction();
+        res.status(201).json({ success: true, pharmacyId });
+    } catch (error) {
+        console.error("Failed to create pharmacy:", error);
+        res.status(500).json({ error: "Server error creating pharmacy" });
+    }
+});
+
+/**
+ * Search for pharmacies by medication and calculate distance
+ * GET /api/pharmacies/search?medId=...&lat=...&lng=...
+ */
+router.get("/search", (req, res) => {
+    const { medId, lat, lng } = req.query;
+    if (!medId) return res.status(400).json({ error: "medId is required" });
+
+    try {
+        const userLat = parseFloat(lat as string);
+        const userLng = parseFloat(lng as string);
+
+        const pharmacies = db.prepare(`
+            SELECT 
+                p.id_pharmacie as id, 
+                p.nom_pharmacie as name, 
+                p.adresse as address, 
+                p.telephone as phone,
+                p.latitude,
+                p.longitude,
+                s.quantite as quantity
+            FROM Pharmacies p
+            JOIN StockMedicamentsPharmacie s ON p.id_pharmacie = s.id_pharmacie
+            WHERE s.id_medicament = ? AND s.quantite > 0
+        `).all(medId) as any[];
+
+        // Calculate distance using Haversine formula if coordinates are provided
+        const result = pharmacies.map(p => {
+            let distance = null;
+            if (!isNaN(userLat) && !isNaN(userLng) && p.latitude && p.longitude) {
+                const R = 6371; // Earth radius in km
+                const dLat = (p.latitude - userLat) * Math.PI / 180;
+                const dLng = (p.longitude - userLng) * Math.PI / 180;
+                const a =
+                    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(userLat * Math.PI / 180) * Math.cos(p.latitude * Math.PI / 180) *
+                    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                distance = parseFloat((R * c).toFixed(2));
+            }
+            return { ...p, distance };
+        });
+
+        // Sort by distance if available, otherwise by name
+        result.sort((a, b) => {
+            if (a.distance !== null && b.distance !== null) return a.distance - b.distance;
+            return a.name.localeCompare(b.name);
+        });
+
+        res.json({ pharmacies: result });
+    } catch (error) {
+        console.error("Failed to search pharmacies:", error);
+        res.status(500).json({ error: "Server error searching pharmacies" });
+    }
+});
+
+// Delete a pharmacy
+router.delete("/:id", (req, res) => {
+    const pharmacyId = req.params.id;
+    try {
+        db.prepare("DELETE FROM Pharmacies WHERE id_pharmacie = ?").run(pharmacyId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Failed to delete pharmacy:", error);
+        res.status(500).json({ error: "Server error deleting pharmacy" });
+    }
+});
+
+// Get stock for a specific pharmacy
+router.get("/:id/stock", (req, res) => {
+    const pharmacyId = req.params.id;
+    try {
+        const stock = db.prepare(`
+            SELECT 
+                s.id_stock as id,
+                m.id_medicament as medicationId,
+                m.nom as medicationName,
+                s.quantite as quantity
+            FROM StockMedicamentsPharmacie s
+            JOIN Medicaments m ON s.id_medicament = m.id_medicament
+            WHERE s.id_pharmacie = ?
+        `).all(pharmacyId);
+        res.json({ stock });
+    } catch (error) {
+        console.error("Failed to fetch stock:", error);
+        res.status(500).json({ error: "Server error fetching stock" });
+    }
+});
+
+// Update stock for a pharmacy
+router.post("/:id/stock", (req, res) => {
+    const pharmacyId = req.params.id;
+    const { medicationId, quantity } = req.body;
+
+    if (!medicationId) return res.status(400).json({ error: "Missing medicationId" });
+
+    try {
+        // Use UPSERT (using SQLite's INSERT ... ON CONFLICT)
+        db.prepare(`
+            INSERT INTO StockMedicamentsPharmacie (id_pharmacie, id_medicament, quantite)
+            VALUES (?, ?, ?)
+            ON CONFLICT(id_pharmacie, id_medicament) DO UPDATE SET quantite = excluded.quantite
+        `).run(pharmacyId, medicationId, quantity || 0);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Failed to update stock:", error);
+        res.status(500).json({ error: "Server error updating stock" });
+    }
+});
+
+export const pharmacyRouter = router;

@@ -1,0 +1,149 @@
+import { Router } from "express";
+import { db } from "../db";
+
+const router = Router();
+
+// Get user prescriptions and upcoming doses
+router.get("/", (req, res) => {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
+
+    try {
+        const doses = db.prepare(`
+      SELECT 
+        cp.id_calendrier_prise as id,
+        m.id_medicament as medicationId,
+        m.nom as medicationName,
+        eo.dose_personnalisee as dose,
+        cp.heure_prevue as time,
+        cp.rappel_envoye as statusReminderSent,
+        cp.statut_prise as statusTaken
+      FROM CalendrierPrises cp
+      JOIN ElementsOrdonnance eo ON cp.id_element_ordonnance = eo.id_element_ordonnance
+      JOIN Medicaments m ON eo.id_medicament = m.id_medicament
+      JOIN Ordonnances o ON eo.id_ordonnance = o.id_ordonnance
+      WHERE o.id_utilisateur = ? AND o.est_active = 1
+      ORDER BY cp.heure_prevue ASC
+      LIMIT 100
+    `).all(userId);
+
+        const mappedDoses = doses.map((d: any) => ({
+            id: d.id,
+            medicationId: d.medicationId,
+            medicationName: d.medicationName,
+            dose: d.dose,
+            unit: "unité",
+            time: new Date(d.time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            statusReminderSent: !!d.statusReminderSent,
+            statusTaken: !!d.statusTaken
+        }));
+
+        res.json({
+            doses: mappedDoses,
+            stats: {
+                observanceRate: mappedDoses.length > 0
+                    ? Math.round((mappedDoses.filter(d => d.statusTaken).length / mappedDoses.length) * 100)
+                    : 100,
+                activeReminders: mappedDoses.filter(d => !d.statusTaken).length,
+                plannedReminders: mappedDoses.length,
+                nearbyPharmacies: 12,
+                nextDose: mappedDoses.find(d => !d.statusTaken) || null
+            }
+        });
+    } catch (error) {
+        console.error("Failed to list prescriptions:", error);
+        res.status(500).json({ error: "Server error fetching prescriptions" });
+    }
+});
+
+// Create a new prescription
+router.post("/", (req, res) => {
+    const { userId, title, weight, age, medications, notifConfig } = req.body;
+    if (!userId) return res.status(400).json({ error: "User ID required" });
+
+    try {
+        const insertTransaction = db.transaction(() => {
+            // 1. Create Ordonnance
+            const ordStmt = db.prepare(`
+        INSERT INTO Ordonnances (id_utilisateur, titre, poids_patient, age_patient, date_ordonnance) 
+        VALUES (?, ?, ?, ?, CURRENT_DATE)
+      `);
+            const ordInfo = ordStmt.run(userId, title, weight, age);
+            const idOrdonnance = ordInfo.lastInsertRowid;
+
+            // 2. Save Notification Preferences if provided
+            if (notifConfig && notifConfig.phone) {
+                let canalId = 1; // SMS default
+                if (notifConfig.type === 'whatsapp') canalId = 2;
+                if (notifConfig.type === 'call') canalId = 3;
+                if (notifConfig.type === 'push') canalId = 4;
+
+                db.prepare(`
+          INSERT OR REPLACE INTO PreferencesNotificationUtilisateurs (id_utilisateur, id_canal, valeur_contact, est_active)
+          VALUES (?, ?, ?, 1)
+        `).run(userId, canalId, notifConfig.phone);
+            }
+
+            // 3. Iterate each Medication
+            for (const m of medications) {
+                // Find or create medicament
+                let medRecord = db.prepare("SELECT id_medicament FROM Medicaments WHERE LOWER(nom) = LOWER(?)").get(m.name) as { id_medicament: number } | undefined;
+
+                let idMedicament;
+                if (!medRecord) {
+                    const mStmt = db.prepare("INSERT INTO Medicaments (nom) VALUES (?)");
+                    const mInfo = mStmt.run(m.name);
+                    idMedicament = mInfo.lastInsertRowid;
+                } else {
+                    idMedicament = medRecord.id_medicament;
+                }
+
+                // Insert ElementsOrdonnance
+                const eoStmt = db.prepare(`
+          INSERT INTO ElementsOrdonnance (id_ordonnance, id_medicament, type_frequence, duree_jours, dose_personnalisee)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+                // Basic mapping for frequency
+                const freq = m.intervalHours ? 'personnalise' : (m.morning ? 'matin' : (m.midday ? 'midi' : 'soir'));
+                const eoInfo = eoStmt.run(idOrdonnance, idMedicament, freq, m.durationDays, m.doseValue);
+                const idElement = eoInfo.lastInsertRowid;
+
+                // Generate CalendrierPrises Schedule
+                const pStmt = db.prepare(`
+          INSERT INTO CalendrierPrises (id_element_ordonnance, heure_prevue, dose, statut_prise)
+          VALUES (?, ?, ?, 0)
+        `);
+
+                // Helper to add days to current date
+                const startDate = new Date();
+                for (let day = 0; day < m.durationDays; day++) {
+                    const currentDate = new Date(startDate);
+                    currentDate.setDate(startDate.getDate() + day);
+
+                    if (m.morning) {
+                        const d = new Date(currentDate); d.setHours(8, 0, 0, 0);
+                        pStmt.run(idElement, d.toISOString(), m.doseValue);
+                    }
+                    if (m.midday) {
+                        const d = new Date(currentDate); d.setHours(12, 0, 0, 0);
+                        pStmt.run(idElement, d.toISOString(), m.doseValue);
+                    }
+                    if (m.evening) {
+                        const d = new Date(currentDate); d.setHours(18, 0, 0, 0);
+                        pStmt.run(idElement, d.toISOString(), m.doseValue);
+                    }
+                }
+            }
+            return idOrdonnance;
+        });
+
+        const newId = insertTransaction();
+        res.status(201).json({ success: true, prescriptionId: newId });
+
+    } catch (error) {
+        console.error("Failed to save prescription:", error);
+        res.status(500).json({ error: "Server error saving prescription", details: error instanceof Error ? error.message : "Unknown error" });
+    }
+});
+
+export const prescriptionRouter = router;

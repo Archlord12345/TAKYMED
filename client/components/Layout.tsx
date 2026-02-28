@@ -10,6 +10,7 @@ import {
   PlusCircle,
   Bell,
   Stethoscope,
+  ShieldAlert,
   Menu
 } from "lucide-react";
 import {
@@ -47,11 +48,7 @@ export function Layout({ children }: LayoutProps) {
         <div className="container mx-auto px-4 h-20 md:h-32 flex items-center justify-between transition-all duration-500">
           <Link to="/" className="group flex items-center gap-3 md:gap-6 active:scale-95 transition-transform">
             <div className="relative p-2 md:p-4 rounded-2xl md:rounded-[2rem] bg-white/60 backdrop-blur-md border border-white/40 shadow-xl group-hover:shadow-primary/20 transition-all duration-700 hover:rotate-3">
-              <Logo className="h-10 md:h-24" showGlow />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xl md:text-4xl font-black tracking-tighter text-primary bg-clip-text text-transparent bg-gradient-to-r from-primary via-blue-600 to-indigo-600 animate-gradient-x">TAKYMED</span>
-              <span className="text-[7px] md:text-[11px] font-bold tracking-[0.2em] md:tracking-[0.4em] text-muted-foreground uppercase opacity-80 pl-0.5 md:pl-1">Take Your Medicine</span>
+              <Logo className="h-10 md:h-24" />
             </div>
           </Link>
 
@@ -71,10 +68,16 @@ export function Layout({ children }: LayoutProps) {
                   Médicaments & Stocks
                 </Link>
                 {user.type === "pharmacist" && (
-                  <Link to="/pharmacy-mgmt" className="flex items-center gap-2 hover:text-primary transition-colors">
-                    <Stethoscope className="w-4 h-4" />
-                    Mes Pharmacies
-                  </Link>
+                  <>
+                    <Link to="/pharmacy-mgmt" className="flex items-center gap-2 hover:text-primary transition-colors">
+                      <Stethoscope className="w-4 h-4" />
+                      Mes Pharmacies
+                    </Link>
+                    <Link to="/interactions-mgmt" className="flex items-center gap-2 hover:text-primary transition-colors">
+                      <ShieldAlert className="w-4 h-4" />
+                      Incompatibilités
+                    </Link>
+                  </>
                 )}
                 <Link to="/ads" className="flex items-center gap-2 hover:text-primary transition-colors">
                   <Bell className="w-4 h-4" />
@@ -146,10 +149,16 @@ export function Layout({ children }: LayoutProps) {
                           Médicaments & Stocks
                         </Link>
                         {user.type === "pharmacist" && (
-                          <Link to="/pharmacy-mgmt" className="flex items-center gap-4 text-lg font-bold hover:text-primary transition-colors p-2 rounded-xl hover:bg-primary/5">
-                            <Stethoscope className="w-6 h-6" />
-                            Mes Pharmacies
-                          </Link>
+                          <>
+                            <Link to="/pharmacy-mgmt" className="flex items-center gap-4 text-lg font-bold hover:text-primary transition-colors p-2 rounded-xl hover:bg-primary/5">
+                              <Stethoscope className="w-6 h-6" />
+                              Mes Pharmacies
+                            </Link>
+                            <Link to="/interactions-mgmt" className="flex items-center gap-4 text-lg font-bold hover:text-primary transition-colors p-2 rounded-xl hover:bg-primary/5">
+                              <ShieldAlert className="w-6 h-6" />
+                              Incompatibilités
+                            </Link>
+                          </>
                         )}
                         <Link to="/ads" className="flex items-center gap-4 text-lg font-bold hover:text-primary transition-colors p-2 rounded-xl hover:bg-primary/5">
                           <Bell className="w-6 h-6" />

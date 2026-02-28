@@ -30,12 +30,14 @@ export default function Auth({ mode }: { mode: "login" | "register" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (accountType === "standard" || accountType === "pharmacist") {
-      login(email || `${accountType}@test.com`, accountType);
-      toast.success(mode === "login" ? "Connexion réussie !" : "Compte créé !");
-      navigate("/dashboard");
+      const success = await login(email || `${accountType}@test.com`, accountType);
+      if (success) {
+        toast.success(mode === "login" ? "Connexion réussie !" : "Compte créé !");
+        navigate("/dashboard");
+      }
     } else {
       if (mode === "register") {
         setStep("payment");
@@ -50,11 +52,13 @@ export default function Auth({ mode }: { mode: "login" | "register" }) {
     setStep("pin");
   };
 
-  const handlePin = (e: React.FormEvent) => {
+  const handlePin = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(phone || "professional@test.com", "professional", phone);
-    toast.success("Authentification réussie !");
-    navigate("/dashboard");
+    const success = await login(phone || "professional@test.com", "professional", phone);
+    if (success) {
+      toast.success("Authentification réussie !");
+      navigate("/dashboard");
+    }
   };
 
   const setTestUser = (type: "standard" | "professional" | "pharmacist") => {

@@ -2,6 +2,10 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { handleDemo } from "./routes/demo";
+import { authRouter } from "./routes/auth";
+import { prescriptionRouter } from "./routes/prescriptions";
+import { medicationRouter } from "./routes/medications";
+import { pharmacyRouter } from "./routes/pharmacies";
 import { db, initializeDatabase } from "./db";
 
 // Initialize the SQLite database on server startup
@@ -15,23 +19,26 @@ export function createServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Custom CSP Middleware to prevent Chrome DevTools and Google Translate blocking
+  app.use((req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob: ws: wss:;"
+    );
+    next();
+  });
+
   // Example API routes
   app.get("/api/ping", (_req, res) => {
     const ping = process.env.PING_MESSAGE ?? "ping";
     res.json({ message: ping });
   });
 
+  app.use("/api/auth", authRouter);
+  app.use("/api/prescriptions", prescriptionRouter);
+  app.use("/api/medications", medicationRouter);
+  app.use("/api/pharmacies", pharmacyRouter);
   app.get("/api/demo", handleDemo);
-
-  // Database verification route
-  app.get("/api/medications", (_req, res) => {
-    try {
-      const medications = db.prepare("SELECT * FROM Medicaments LIMIT 10").all();
-      res.json(medications);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch medications" });
-    }
-  });
 
   return app;
 }

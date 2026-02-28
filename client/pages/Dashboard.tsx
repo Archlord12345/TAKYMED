@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/Logo";
@@ -12,15 +13,39 @@ import {
    CheckCircle2,
    AlertCircle,
    Store,
-   ArrowRight
+   ArrowRight,
+   Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { DoseSchedule } from "@shared/api";
+import { toast } from "sonner";
 
 export default function Dashboard() {
    const { user } = useAuth();
+   const [doses, setDoses] = useState<DoseSchedule[]>([]);
+   const [stats, setStats] = useState<any>(null);
+   const [isLoading, setIsLoading] = useState(true);
+
+   useEffect(() => {
+      async function fetchPrescriptions() {
+         if (!user?.id) return;
+         try {
+            const res = await fetch(`/api/prescriptions?userId=${user.id}`);
+            if (!res.ok) throw new Error("Failed to fetch");
+            const data = await res.json();
+            setDoses(data.doses);
+            setStats(data.stats);
+         } catch (error) {
+            console.error(error);
+            toast.error("Erreur lors du chargement des ordonnances");
+         } finally {
+            setIsLoading(false);
+         }
+      }
+      fetchPrescriptions();
+   }, [user?.id]);
 
    if (!user) return null;
 
@@ -110,26 +135,34 @@ export default function Dashboard() {
                            <div className="flex flex-col md:flex-row gap-8 items-center border-b pb-8">
                               <div className="w-24 h-24 rounded-full border-8 border-primary/20 flex items-center justify-center text-primary font-bold text-lg relative">
                                  <Clock className="w-6 h-6 absolute -top-1 -right-1 bg-white rounded-full p-1 border shadow-sm" />
-                                 12:00
+                                 {stats?.nextDose ? stats.nextDose.time : "--:--"}
                               </div>
                               <div className="flex-1 text-center md:text-left space-y-2">
-                                 <h3 className="text-2xl font-bold">Prochaine prise : Amoxicilline</h3>
-                                 <p className="text-muted-foreground">Une gélule à prendre pendant le déjeuner.</p>
-                                 <div className="flex gap-4 justify-center md:justify-start pt-2">
-                                    <Button size="sm" className="rounded-xl h-10 px-6 font-bold">
-                                       <CheckCircle2 className="w-4 h-4 mr-2" />
-                                       Marquer comme pris
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="rounded-xl h-10 px-6">Plus tard</Button>
-                                 </div>
+                                 <h3 className="text-2xl font-bold">
+                                    {stats?.nextDose ? `Prochaine prise : ${stats.nextDose.medicationName}` : "Aucune prise à venir"}
+                                 </h3>
+                                 <p className="text-muted-foreground">
+                                    {stats?.nextDose
+                                       ? `${stats.nextDose.dose} ${stats.nextDose.unit} à prendre pendant le ${stats.nextDose.type}.`
+                                       : "Toutes vos prises sont terminées ou aucune n'est planifiée."}
+                                 </p>
+                                 {stats?.nextDose && (
+                                    <div className="flex gap-4 justify-center md:justify-start pt-2">
+                                       <Button size="sm" className="rounded-xl h-10 px-6 font-bold">
+                                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                                          Marquer comme pris
+                                       </Button>
+                                       <Button variant="outline" size="sm" className="rounded-xl h-10 px-6">Plus tard</Button>
+                                    </div>
+                                 )}
                               </div>
                            </div>
 
                            {/* Stats */}
                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                              <DashboardStat label="Observance" value="85%" subtext="Cette semaine" />
-                              <DashboardStat label="Rappels actifs" value="3" subtext="Sur 4 planifiés" />
-                              <DashboardStat label="Pharmacies" value="12" subtext="À proximité" />
+                              <DashboardStat label="Observance" value={stats ? `${stats.observanceRate}%` : "0%"} subtext="Cette semaine" />
+                              <DashboardStat label="Rappels actifs" value={stats ? stats.activeReminders.toString() : "0"} subtext={`Sur ${stats ? stats.plannedReminders : 0} planifiés`} />
+                              <DashboardStat label="Pharmacies" value={stats ? stats.nearbyPharmacies.toString() : "0"} subtext="À proximité" />
                            </div>
 
                            {/* Tips */}
@@ -179,32 +212,42 @@ export default function Dashboard() {
                            </h3>
 
                            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                              {mockDoses.map((dose, idx) => (
-                                 <div key={idx} className="group p-4 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center gap-4 hover:border-primary/30">
-                                    <div className="w-12 h-12 rounded-xl bg-slate-50 flex flex-col items-center justify-center border group-hover:bg-primary/5 transition-colors">
-                                       <span className="text-[10px] font-bold text-muted-foreground uppercase">Jour</span>
-                                       <span className="text-lg font-black text-primary leading-none">{dose.day}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                       <h4 className="font-bold text-slate-800 truncate">{dose.medicationName}</h4>
-                                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                                          <span className="flex items-center gap-1">
-                                             <Clock className="w-3 h-3" />
-                                             {dose.time}
-                                          </span>
-                                          <span className="px-2 py-0.5 bg-slate-100 rounded-md font-medium">
-                                             {dose.dose} {dose.unit}
-                                          </span>
+                              {isLoading ? (
+                                 <div className="flex justify-center py-8">
+                                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                                 </div>
+                              ) : doses.length === 0 ? (
+                                 <div className="text-center p-8 bg-slate-50 rounded-2xl border border-dashed text-muted-foreground">
+                                    Aucune prise programmée.
+                                 </div>
+                              ) : (
+                                 doses.map((dose, idx) => (
+                                    <div key={dose.id || idx} className="group p-4 bg-white border rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center gap-4 hover:border-primary/30">
+                                       <div className="w-12 h-12 rounded-xl bg-slate-50 flex flex-col items-center justify-center border group-hover:bg-primary/5 transition-colors">
+                                          <span className="text-[10px] font-bold text-muted-foreground uppercase">Jour</span>
+                                          <span className="text-lg font-black text-primary leading-none">{dose.day}</span>
+                                       </div>
+                                       <div className="flex-1 min-w-0">
+                                          <h4 className="font-bold text-slate-800 truncate">{dose.medicationName}</h4>
+                                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                                             <span className="flex items-center gap-1">
+                                                <Clock className="w-3 h-3" />
+                                                {dose.time}
+                                             </span>
+                                             <span className="px-2 py-0.5 bg-slate-100 rounded-md font-medium">
+                                                {dose.dose} {dose.unit}
+                                             </span>
+                                          </div>
+                                       </div>
+                                       <div className={cn(
+                                          "w-10 h-10 rounded-full flex items-center justify-center border transition-colors",
+                                          dose.statusTaken ? "bg-green-500 border-green-500 text-white" : "bg-slate-50 text-slate-300"
+                                       )}>
+                                          <CheckCircle2 className="w-5 h-5" />
                                        </div>
                                     </div>
-                                    <div className={cn(
-                                       "w-10 h-10 rounded-full flex items-center justify-center border transition-colors",
-                                       dose.statusTaken ? "bg-green-500 border-green-500 text-white" : "bg-slate-50 text-slate-300"
-                                    )}>
-                                       <CheckCircle2 className="w-5 h-5" />
-                                    </div>
-                                 </div>
-                              ))}
+                                 ))
+                              )}
                            </div>
                         </div>
                      </div>
@@ -247,13 +290,5 @@ function ChevronRight({ className }: { className?: string }) {
    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
 }
 
-const mockDoses: DoseSchedule[] = [
-   { medicationId: "1", medicationName: "Amoxicilline", dose: 1, unit: "gélule", time: "08:00", day: 1, type: "matin", statusReminderSent: true, statusTaken: true },
-   { medicationId: "1", medicationName: "Amoxicilline", dose: 1, unit: "gélule", time: "20:00", day: 1, type: "soir", statusReminderSent: true, statusTaken: false },
-   { medicationId: "2", medicationName: "Doliprane 1000", dose: 1, unit: "comprimé", time: "12:00", day: 1, type: "midi", statusReminderSent: true, statusTaken: true },
-   { medicationId: "1", medicationName: "Amoxicilline", dose: 1, unit: "gélule", time: "08:00", day: 2, type: "matin", statusReminderSent: false, statusTaken: false },
-   { medicationId: "2", medicationName: "Doliprane 1000", dose: 1, unit: "comprimé", time: "12:00", day: 2, type: "midi", statusReminderSent: false, statusTaken: false },
-   { medicationId: "1", medicationName: "Amoxicilline", dose: 1, unit: "gélule", time: "20:00", day: 2, type: "soir", statusReminderSent: false, statusTaken: false },
-   { medicationId: "3", medicationName: "Vitamine C", dose: 1, unit: "comprimé", time: "08:00", day: 3, type: "matin", statusReminderSent: false, statusTaken: false },
-];
+
 

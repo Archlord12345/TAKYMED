@@ -31,8 +31,12 @@ export default function Index() {
               Votre santé, notre priorité absolue
             </div>
           </div>
-          <h1 className="text-4xl md:text-6xl lg:text-8xl font-black tracking-tight text-foreground mb-6 md:mb-8 leading-[1.1]">
-            Gérez vos médicaments avec <span className="text-primary bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-600">TAKYMED</span>
+          <Logo className="h-16 md:h-24 mx-auto mb-6" />
+          <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tight leading-[1.1]">
+            Gérez vos médicaments avec{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
+              TAKYMED
+            </span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground mb-10 md:mb-12 max-w-2xl mx-auto leading-relaxed">
             Rappels intelligents, stocks en pharmacie et gestion simplifiée de vos ordonnances.
